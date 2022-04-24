@@ -1,6 +1,8 @@
 // Canvas Related 
 const canvas = document.createElement('canvas');
 const context = canvas.getContext('2d');
+const socket = io('http://localhost:3000');
+let isReferee = false;
 let paddleIndex = 0;
 
 let width = 500;
@@ -23,7 +25,7 @@ let ballDirection = 1;
 // Speed
 let speedY = 2;
 let speedX = 0;
-let computerSpeed = 4;
+// let computerSpeed = 4;
 
 // Score for Both Players
 let score = [ 0, 0 ];
@@ -38,16 +40,16 @@ function createCanvas() {
 }
 
 // Wait for Opponents
-// function renderIntro() {
-//   // Canvas Background
-//   context.fillStyle = 'black';
-//   context.fillRect(0, 0, width, height);
+function renderIntro() {
+  // Canvas Background
+  context.fillStyle = 'black';
+  context.fillRect(0, 0, width, height);
 
-//   // Intro Text
-//   context.fillStyle = 'white';
-//   context.font = "32px Courier New";
-//   context.fillText("Waiting for opponent...", 20, (canvas.height / 2) - 30);
-// }
+  // Intro Text
+  context.fillStyle = 'white';
+  context.font = "32px Courier New";
+  context.fillText("Waiting for opponent...", 20, (canvas.height / 2) - 30);
+}
 
 // Render Everything on Canvas
 function renderCanvas() {
@@ -89,6 +91,11 @@ function ballReset() {
   ballX = width / 2;
   ballY = height / 2;
   speedY = 3;
+  socket.emit('ballMove',{
+    ballX,
+    ballY,
+    score,
+  })
 }
 
 // Adjust Ball Movement
@@ -99,6 +106,12 @@ function ballMove() {
   if (playerMoved) {
     ballX += speedX;
   }
+
+  socket.emit('ballMove',{
+    ballX,
+    ballY,
+    score
+  })
 }
 
 // Determine What Ball Bounces Off, Score Points, Reset Ball
@@ -147,9 +160,9 @@ function ballBoundaries() {
       speedX = trajectoryX[1] * 0.3;
     } else {
       // Reset Ball, Increase Computer Difficulty, add to Player Score
-      if (computerSpeed < 6) {
-        computerSpeed += 0.5;
-      }
+      // if (computerSpeed < 6) {
+      //   computerSpeed += 0.5;
+      // }
       ballReset();
       score[0]++;
     }
@@ -157,36 +170,44 @@ function ballBoundaries() {
 }
 
 // Computer Movement
-function computerAI() {
-  if (playerMoved) {
-    if (paddleX[1] + paddleDiff < ballX) {
-      paddleX[1] += computerSpeed;
-    } else {
-      paddleX[1] -= computerSpeed;
-    }
-    if (paddleX[1] < 0) {
-      paddleX[1] = 0;
-    } else if (paddleX[1] > (width - paddleWidth)) {
-      paddleX[1] = width - paddleWidth;
-    }
-  }
-}
+// function computerAI() {
+//   if (playerMoved) {
+//     if (paddleX[1] + paddleDiff < ballX) {
+//       paddleX[1] += computerSpeed;
+//     } else {
+//       paddleX[1] -= computerSpeed;
+//     }
+//     if (paddleX[1] < 0) {
+//       paddleX[1] = 0;
+//     } else if (paddleX[1] > (width - paddleWidth)) {
+//       paddleX[1] = width - paddleWidth;
+//     }
+//   }
+// }
 
 // Called Every Frame
 function animate() {
-  computerAI();
-  ballMove();
+  // computerAI();
+
+  if(isReferee) {
+    ballMove();
+    ballBoundaries();
+  }
+  
   renderCanvas();
-  ballBoundaries();
+  
   window.requestAnimationFrame(animate);
 }
 
-// Start Game, Reset Everything
-function startGame() {
+// load Game, Reset Everything
+function loadGame() {
   createCanvas();
-  // renderIntro();
-  
-  paddleIndex = 0;
+  renderIntro();
+  socket.emit('ready',)
+}
+
+function startGame() {
+  paddleIndex = isReferee ? 0 : 1;
   window.requestAnimationFrame(animate);
   canvas.addEventListener('mousemove', (e) => {
     playerMoved = true;
@@ -197,11 +218,34 @@ function startGame() {
     if (paddleX[paddleIndex] > (width - paddleWidth)) {
       paddleX[paddleIndex] = width - paddleWidth;
     }
+    socket.emit('paddleMove', {
+      xPosition: paddleX[paddleIndex],
+    })
     // Hide Cursor
     canvas.style.cursor = 'none';
   });
 }
 
 // On Load
-startGame();
+loadGame();
 
+
+socket.on('connect', ()=>{
+  console.log('Connected as...', socket.id);
+})
+
+socket.on('startGame', (refereeId)=>{
+  console.log('Referee is', refereeId);
+
+  isReferee = socket.id === refereeId;
+  startGame();
+})
+
+socket.on('paddleMove',(paddleData)=>{
+  const opponentPaddleIndex = 1 - paddleIndex;
+  paddleX[opponentPaddleIndex] = paddleData.xPosition
+})
+
+socket.on('ballMove',(ballData)=>{
+  ({ballX, ballY, score} = ballData)
+})
